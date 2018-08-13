@@ -1,0 +1,742 @@
+<!--任务管理-->
+<template>
+    <div class="page-content">
+       <!--头部-->
+        <zing-head
+          :isComeBack="isComeBack"
+          :popupPickerData="listB"
+          :popupTitle="titleB"
+          @popup-change="classfiyChange"
+          @popup-onhide="onHide"
+          @doSome="getInfo(istaskFile)">
+        
+            <div slot="header-right">
+                <span class="header-search">
+                   <i class="iconfont icon-fangdajing" @click="task_search"></i>
+                </span>
+                <span class="header-jiahao">
+                    <dropdown :data="datas" trigger="click" placement="bottomRight" @item-click="handleMenu">
+                        <a href="javascript:void(0)" class="ant-dropdown-link ant-dropdown-trigger">
+                            <i class="iconfont icon-gengduo"></i>
+                        </a>
+                    </dropdown>
+                 </span>
+            </div>
+        </zing-head>
+       <!--搜索-->
+         <search
+            class="searchStyle"
+            :searchFlag="isShow"
+            @cancelInput ="onCancel"
+            @confirmInput="onSubmit"
+        ></search>
+       <!--项目-->
+        <p class="nav-text" v-show="flag">{{promptTitle}}</p>
+        <div class="activityAitema">
+            <scroll ref="scroll" :scrollbar="true">
+                <div>
+                    <!--置顶任务--> 
+                    <GridCard v-show="starUnits" v-for="(starUnit,item) in starUnits"
+                              :key="item" class="taskGridCard"
+                               style="background:rgb(150,150,150)">
+                            <div slot="cardLeft" class="taskleft" @click="gotoGantt(starUnit)">
+                                <div :class="'leftImg iconfont icon-'+starUnit.workType" style="color: #fff;font-size: 40px;padding-left: 5px;padding-top: 3px;border-radius: 5px" ></div>
+                                <div class="taskManageCardtext">
+                                    <p class="personnel">{{starUnit.title}}</p>
+                                    <p class="personnel2">{{starUnit.createCardUrl}}</p>
+                                </div>
+                                <badge v-if="dshRedPoint" style="position: absolute;top:10px;right: 10px"></badge>
+                            </div>
+                            <div slot="cardRight" class="right" @click="gotoGantt(starUnit)">
+                                <i class="iconfont icon-gengduo" @click.stop="gotoUpdateDelPage(starUnit,item)"></i>
+                                <div class="tag-wrapper">
+                                    <div v-if="starUnit.boardProperty">
+                                    <span class="tag-wrapper" v-for="(typeTag,index) in starUnit.boardProperty.trim().split(' ') " :key="index">
+                                        <tag v-if="starUnit.boardProperty" type="success">{{typeTag}}</tag>
+                                    </span>
+                                    </div>
+                                </div>
+                            </div>
+                    </GridCard>
+
+
+                    <GridCard v-for="(taskUnit,item) in unStarUnits" :key="item" class="taskGridCard">
+                            <div slot="cardLeft" class="taskleft" @click="gotoGantt(taskUnit)">
+                                <div :class="'leftImg iconfont icon-'+taskUnit.workType" style="color: #fff;font-size: 40px;padding-left: 5px;padding-top: 3px;border-radius: 5px" ></div>
+                                <div class="cardtext">
+                                    <p class="personnel">{{taskUnit.title}}</p>
+                                    <p class="personnel">{{cardUrlToName(taskUnit.createCardUrl)}}</p>
+                                </div>
+                                <badge v-if="dshRedPoint" style="position: absolute;top:10px;right: 10px"></badge>
+                            </div>
+                            <div slot="cardRight" class="right" @click="gotoGantt(taskUnit)">
+                                <i class="iconfont icon-gengduo" @click.stop="gotoUpdateDelPage(taskUnit,item)"></i>
+                                <div v-if="taskUnit.boardProperty">
+                                <span class="tag-wrapper" v-for="(typeTag,index) in taskUnit.boardProperty.trim().split(' ') " :key="index">
+                                    <tag v-if="taskUnit.boardProperty" type="success">{{typeTag}}</tag>
+                                </span>
+                                </div>
+                            </div>
+                    </GridCard>
+                </div>
+            </scroll>
+        </div>
+        <!--点点-->
+        <x-dialog v-model="showDialog" hide-on-blur>
+            <div class="edit" v-if="istaskFile && isCreaturl" @click="editMethod()">编辑项目</div>
+            <div class="edit" v-if="istaskFile && isCreaturl" @click="editProject()">添加任务</div>
+            <div class="edit" @click="edelDetle()" v-if ="isCreaturl">删除</div>
+            <div class="edit" v-if="istaskFile" @click="editclazz()">分类</div>
+        </x-dialog>
+        <!--选择分类组件-->
+        <classSelection
+            :showPicker="showClassSetter"
+            :title1="title1"
+            :title2="title2"
+            :tagType1="tagType1"
+            :tagType2="tagType2"
+            @abort="classAbort"
+            @checkSelected="checkSelected"
+             >
+        </classSelection>
+    </div>
+</template>
+<script>
+import {
+  XDialog,
+  PopupPicker,
+  // Search,
+  Group,
+  Confirm,
+  XInput,
+  XButton
+} from "vux";
+import Tag from "@/components/tag/Tag";
+import GridCard from "@/components/gridcard/GridCard";
+import ZingHead from "@/components/zingHead/ZingHead";
+import Dropdown from "@/components/dropdown/Dropdown";
+import Scroll from "@/components/scroll/Scroll";
+import iconPicker from "@/components/iconpicker/IconPicker";
+import classSelection from "../common/classSelection/classSelection";
+import search from "@/components/search/search";
+import Qs from "qs";
+import { mapState } from "vuex";
+import { Z_IsEmpty20 } from "utils/fn";
+import taskDetail from "./taskDetail";
+import _ from "lodash";
+
+export default {
+  components: {
+    XDialog,
+    Tag,
+    search,
+    Dropdown,
+    ZingHead,
+    PopupPicker,
+    Group,
+    GridCard,
+    Scroll,
+    classSelection,
+    Confirm,
+    XInput,
+    iconPicker,
+    XButton,
+    taskDetail,
+    Z_IsEmpty20
+  },
+  data() {
+    return {
+      hrData: [],
+      taskManageTitle: "", //头部标题
+      isComeBack: true, //头部是否显示返回按钮
+      istaskFile: true, //是否已归档
+      isCreaturl: false, //是否是creatUrl
+      currentTask: {}, // 缓存当前点击的task
+      isShow: false,
+      showDialog: false,
+      datas: [
+        { content: "新建项目" },
+        {
+          content: "全体分类",
+          url: "/classmain?classType=superProject&headTitle=全体分类"
+        },
+        {
+          content: "个人分类",
+          url: "/classmain?classType=project&headTitle=个人分类 "
+        },
+        { content: "查看模板" }
+      ],
+      //分类
+      valueB: [],
+      titleB: "全部分类",
+      listB: [
+        {
+          name: "全部分类",
+          value: "all",
+          parent: 0
+        },
+        {
+          name: "所有分类",
+          value: "all001",
+          parent: "all"
+        },
+        {
+          name: "全体分类",
+          value: "publicWorkType",
+          parent: 0
+        },
+        {
+          name: "个人分类",
+          value: "privateWorkType",
+          parent: 0
+        }
+      ],
+
+      taskUnits: [],
+      showClassSetter: false,
+      bgColor: "",
+      dialogIcon: false,
+      title1: "个人分类",
+      title2: "全体分类",
+      tagType1: "project",
+      tagType2: "superProject",
+      item: 0,
+      starUnits: [], //置顶的taskUnit
+      Top: true, //是否显示置顶字样
+      cancelTop: false, //是否显示取消置顶字样
+      unStarUnits: [], //非置顶的taskUnit
+      classfiy: {},
+      statTop1: "", //置顶延时1
+      statTop2: "", //置顶延时2
+      flag: false, //暂无数据
+      promptTitle: "暂无数据，请添加",
+      dshRedPoint: false //红点
+    };
+  },
+  computed: {
+    ...mapState({
+      redPoint: state => state.ui.redPoint
+    }),
+    cardUrl() {
+      return this.$store.state.ui.userInfo.cardUrl;
+    },
+    realName() {
+      return this.$store.state.ui.userInfo.RealName;
+    },
+    companyId() {
+      return this.$store.state.ui.userInfo.companyId;
+    }
+  },
+  watch: {
+    redPoint(rpData) {
+      if (!rpData) {
+        return;
+      }
+      let sArr = rpData.split("_ZSP_");
+      for (let i = 0; i < sArr.length; i++) {
+        if (!Z_IsEmpty20(sArr[i])) {
+          if (sArr[i].substring(0, sArr[i].indexOf(":")) === "task") {
+            //task红点
+            let jsonStr = sArr[i].substring(
+              sArr[i].indexOf(":") + 1,
+              sArr[i].length
+            );
+            let hrObj = JSON.parse(jsonStr);
+            console.log("红点提示", hrObj);
+
+            if (hrObj["HR_SH"].length > 0) {
+              this.dshRedPoint = true;
+            }
+          }
+        }
+      }
+    }
+  },
+  created() {
+    this.initClassfiy();
+  },
+  mounted() {
+    this.loadHr();
+    this._getboardInfo();
+
+    console.log("第一屏cardurl", this.$store.state.ui.userInfo.cardUrl);
+    console.log("第一屏RealName", this.$store.state.ui.userInfo.RealName);
+    console.log("第一屏companyId", this.$store.state.ui.userInfo.companyId);
+  },
+  beforeDestroy() {
+    clearTimeout(this.statTop1);
+    clearTimeout(this.statTop2);
+  },
+
+  methods: {
+    loadHr() {
+      let url = "/zingbiz/auth/user/getHrUserMapByCardUrlList";
+      this.$http.get(url).then(response => {
+        if (response.data.success === true) {
+          this.hrData = response.data.data;
+
+          //                                console.log(this.listB)
+        } else {
+          console.error("错误");
+        }
+      });
+    },
+    cardUrlToName(card) {
+      let realName = "";
+      _.each(this.hrData, (value, cardUrl) => {
+        if (cardUrl === card) {
+          realName = value.userName;
+          return false;
+        }
+      });
+      return realName;
+    },
+    //头部返回
+    getInfo(istaskFile) {
+      if (!istaskFile) {
+        //            setTimeout(() => {
+        //              console.log('toubu')
+        //                this._getboardInfo()
+        //            },2500)
+        this.istaskFile = true;
+        this.$router.go(0);
+        //          this.$router.push({path:'/taskManage/redirect'})
+      }
+    },
+    //左上角所有分类
+    initClassfiy() {
+      /**@augments
+       *  ****** 先不用Axios。all并行  后期考虑一个请求来实现，着急，先这样
+       */
+      let url =
+        "/ZingMH/ZDesk/MENHUWX/MHServiceN/getAllServiceTypeByCardUrl.action";
+      let params = {
+        tagType: "project",
+        companyId: this.companyId,
+        pageNumber: 1,
+        pageSize: 20
+      };
+      this.$http.post(url, Qs.stringify(params)).then(response => {
+        if (response.data.success === true) {
+          _.each(response.data.data.data, classfiy => {
+            this.listB.push({
+              parent: "privateWorkType",
+              name: classfiy.tags,
+              value: classfiy.tags
+            });
+          });
+          if (response.data.data.data.length > 0) {
+            this.listB = this.listB.filter(v => {
+              return v.name !== "全体分类";
+            });
+          }
+          params.tagType = "superProject";
+          this.$http.post(url, Qs.stringify(params)).then(response => {
+            if (response.data.success === true) {
+              _.each(response.data.data.data, classfiy => {
+                this.listB.push({
+                  parent: "publicWorkType",
+                  name: classfiy.tags,
+                  value: classfiy.tags
+                });
+              });
+              if (response.data.data.data.length > 0) {
+                this.listB = this.listB.filter(v => {
+                  return v.name !== "个人分类";
+                });
+              }
+              //                                console.log(this.listB)
+            } else {
+              console.error("错误");
+            }
+          });
+        } else {
+          console.error("错误");
+        }
+      });
+    },
+    //左所有分类
+    classfiyChange(val) {
+      if (val[1] == null) return;
+      this.classfiy.workType = val[0]; //左全体或个人分类
+      this.classfiy.secondedWorkType = val[1]; //左全体或个人分类具体名称
+
+      if (val[0] === "privateWorkType") {
+        //个人分类
+        val[1] = this.$store.state.ui.userInfo.cardUrl + "&&" + val[1];
+      }
+      this._getboardInfo(val);
+    },
+    onHide(type, refInstance) {
+      if (type) {
+        this.titleB = refInstance.getNameValues().split(" ")[1];
+      }
+    },
+    handleMenu(data) {
+      if (data.url) this.$router.push(data.url);
+      if (data.content === "新建项目")
+        this.$router.push({
+          path: "projectManage/collectiveManage/addMange",
+          query: {}
+        });
+      if (data.content === "查看模板") {
+        this._getboardInfo(
+          undefined,
+          "/ZingMH/ZDesk/projectManageBoard/mater/loadBoardPMTByUser.action"
+        );
+        //查看模板
+      }
+    },
+    //    toggleShow(replace) {
+    //      this.isShow = !this.isShow;
+    //      if (this.isShowAdd) {
+    //        this.isShowAdd = !this.isShowAdd;
+    //      }
+    //    },
+    showSearch() {
+      this.isShow = !this.isShow;
+    },
+    //搜索
+    onCancel() {
+      this.isShow = false;
+    },
+    task_search() {
+      this.isShow = !this.isShow;
+    },
+
+    getResult(val) {
+      console.log(val);
+    },
+    onSubmit(val) {
+      console.log(val);
+    },
+    //跳转
+    gotoGantt(taskUnit) {
+      this.$router.push({
+        // path: "/demo/ganttdemo",
+        path: "/projectManage/detail",
+        query: {
+          boardId: taskUnit.boardId,
+          routing: this.$store.state.ui.userInfo.companyId,
+          title: taskUnit.title
+        }
+      });
+    },
+    _getboardInfo(workType, urlParam) {
+      //   let url = urlParam || "/ZingMH/ZDesk/projectManageBoard/mater/loadBoardPMTByUser.action";
+      let url =
+        urlParam ||
+        "/ZingMH/ZDesk/projectManageBoard/mater/loadBoardByUser.action";
+      let params = {};
+      var superWorkType = "";
+      this.taskManageTitle = "任务管理";
+
+      params = {
+        tag: "projectManage",
+        pageNumber: 1,
+        pageSize: 10
+      };
+      if (!_.isUndefined(workType)) {
+        params[workType[0]] = workType[1];
+      }
+      if (urlParam) {
+        params.PMT = true;
+      }
+      this.$http
+        .get(url, { params: params })
+        .then(res => {
+          this.taskUnits = res.data.data[0].data || [];
+          this.starUnits = [];
+          this.unStarUnits = [];
+          for (var i = 0; i < this.taskUnits.length; i++) {
+            var isStar = this.taskUnits[i].isStar;
+
+            //非置顶
+            if (this.classfiy.workType === "all") {
+              if (res.data.data[0].length === 0) {
+                this.flag = true;
+              } else {
+                this.unStarUnits.push(this.taskUnits[i]);
+              }
+            } else if (this.classfiy.workType === "publicWorkType") {
+              if (
+                this.classfiy.secondedWorkType ===
+                this.taskUnits[i].superWorkType
+              ) {
+                if (res.data.data[0].length === 0) {
+                  this.flag = true;
+                } else {
+                  this.unStarUnits.push(this.taskUnits[i]);
+                }
+              }
+            } else if (this.classfiy.workType === "privateWorkType") {
+              console.log("feizhifong");
+              let arr = this.taskUnits[i].privateWorkType.split("&&");
+              if (this.classfiy.secondedWorkType === arr[arr.length - 1]) {
+                if (res.data.data[0].length === 0) {
+                  this.flag = true;
+                } else {
+                  this.unStarUnits.push(this.taskUnits[i]);
+                }
+              }
+            } else {
+              if (res.data.data[0].length === 0) {
+                this.flag = true;
+              } else {
+                this.unStarUnits.push(this.taskUnits[i]);
+              }
+            }
+          }
+
+          //刷新scroll
+          this.$nextTick(() => {
+            this.$refs.scroll.refresh();
+          });
+        })
+        .catch(err => {
+          console.error(err);
+          this.$message({ message: "_getboardInfo请求失败！", type: "error" });
+        });
+    },
+    //编辑（同添加）  置顶 删除 分类
+    editProject() {
+      this.$router.push(
+        "/projectManage/collectiveManage/addChildTask?boardId=" +
+          this.currentTask.boardId
+      );
+    },
+    editMethod() {
+      let taskUnit = this.currentTask;
+      if (taskUnit.privateWorkType) {
+        let arr = taskUnit.privateWorkType.split("&&");
+        //arr[arr.length-1]取汉字
+        let privateWorkType = arr[arr.length - 1];
+        let selectWorkType =
+          "个人分类：" +
+          privateWorkType +
+          "全体分类：" +
+          taskUnit.superWorkType;
+        this.$router.push({
+          path: "/projectManage/collectiveManage/addMange",
+          query: {
+            boardId: taskUnit.boardId,
+            taskName: taskUnit.title,
+            routing: taskUnit.routing,
+            selectWorkType: selectWorkType,
+            privateWorkType: privateWorkType,
+            superWorkType: taskUnit.superWorkType,
+            workType: taskUnit.workType, //图标
+            boardProperty: taskUnit.boardProperty //类型
+          }
+        });
+      } else {
+        this.$router.push({
+          name: "projectManage/collectiveManage/addMange",
+          query: {
+            boardId: taskUnit.boardId,
+            taskName: taskUnit.title,
+            routing: taskUnit.routing,
+            selectWorkType: "",
+            privateWorkType: "",
+            superWorkType: taskUnit.superWorkType
+          }
+        });
+      }
+      this.showDialog = false;
+    },
+
+    edelDetle() {
+      let that = this;
+      this.showDialog = false;
+      let bId = this.currentTask.boardId;
+      let companyId = this.$store.state.ui.userInfo.companyId;
+      this.$vux.confirm.show({
+        title: "删除后该项目无法被找回，确认删除吗?",
+        onCancel() {},
+        onConfirm() {
+          let param = {
+            boardId: bId,
+            companyId: companyId
+          };
+          let url =
+            "/ZingMH/ZDesk/projectManageBoard/mater/deleteBoardById.action";
+          that.$http.get(url, { params: param }).then(res => {
+            that.$vux.toast.show({ text: "删除成功！", type: "success" });
+            setTimeout(function() {
+              that._getboardInfo();
+            }, 2500);
+          });
+        }
+      });
+    },
+    //分类选择
+    classAbort() {
+      this.showClassSetter = false;
+    },
+    editclazz(selected) {
+      this.showClassSetter = true;
+      this.showDialog = false;
+      //初始？？
+      //        this.checkSelected(selected)
+      //        this.privateWorkType = selected.privateWorkType
+      //        this.superWorkType = selected.superWorkType
+    },
+    //分类选择
+    checkSelected(selected, taskUnits) {
+      let bId = this.currentTask.boardId;
+      let routing = this.$store.state.ui.userInfo.companyId;
+      let url4 = "/ZingMH/ZDesk/board/mater/updataEsBoard.action";
+      let params4 = {
+        boardId: bId,
+        routing: routing,
+        property: "nostar"
+      };
+      if (!_.isEmpty(selected.superWorkType)) {
+        params4.superWorkType = selected.superWorkType;
+
+        //更新superWorkType  ??????
+        for (let i in taskUnits) {
+          this.taskUnits[i].superWorkType = selected.superWorkType;
+        }
+      }
+      //  ↓ 私有分类 需要拿到原来数据的 值 替换自己的cardUrl&&私有分类 append到老数据，更新
+      if (!_.isEmpty(selected.privateWorkType)) {
+        params4.privateWorkType = selected.privateWorkType;
+
+        //更新privateWorkType  ????????
+        for (let i in taskUnits) {
+          let arr = this.taskUnits[i].privateWorkType.split("&&");
+          arr[arr.length - 1] = selected.privateWorkType;
+        }
+      }
+      if (
+        _.isEmpty(selected.superWorkType) ||
+        !_.isEmpty(selected.privateWorkType)
+      ) {
+        this.$http
+          .get(url4, { params: params4 })
+          .then(res => {
+            this.$vux.toast.show({ text: "分类成功", type: "success" });
+            this.showClassSetter = false;
+            this._getboardInfo();
+          })
+          .catch(err => {
+            this.$vux.toast.show({ text: "分类失败", type: "false" });
+          });
+      } else {
+        this.$message({ message: "请选择分类", type: "error" });
+      }
+    },
+    //点击点点
+    gotoUpdateDelPage(taskUnit, item) {
+      this.currentTask = taskUnit;
+      this.item = item;
+      this.cancelTop = false; //显示取消置顶字样
+      this.Top = true;
+      //   if (this.currentTask.isStar.trim()) {
+      //     this.cancelTop = true; //显示取消置顶字样
+      //     this.Top = false; //隐藏置顶字样
+      //   }
+      this.showDialog = true;
+      if (this.currentTask.createCardUrl === this.cardUrl) {
+        this.isCreaturl = true;
+      } else if (this.currentTask.createCardUrl !== this.cardUrl) {
+        this.isCreaturl = false;
+      }
+    }
+  }
+};
+</script>
+<style lang="stylus" rel="stylesheet/stylus" scoped>
+.page-content {
+  height: 100%;
+
+  .activityAitema {
+    height: calc(100% -50px);
+  }
+
+  .nav-text {
+    text-align: center;
+    color: #ff8000;
+    width: 100%;
+    margin-top: 15px;
+  }
+
+  .scroll-content {
+    margin-top: -5px;
+  }
+
+  .taskGridCard {
+    display: flex;
+    height: 60px;
+    margin: 5px 0;
+  }
+
+  .taskleft {
+    // overflow: hidden;
+    // width:500px;
+    // flex: 7;
+    // margin-left: 5px;
+  }
+
+  .right {
+    flex: 9;
+  }
+
+  .leftImg {
+    float: left;
+    height: 50px;
+    width: 50px;
+    background-color: #0ae22f;
+    background-size: 800px 50px;
+    background-position: -550px 0;
+  }
+
+  .cardtext {
+    float: left;
+    width:170px
+
+    .personnel {
+      display: block;
+      width: 150px;
+      word-break: keep-all;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 5px;
+      margin-left: 20px;
+    }
+  }
+
+  .weui-dialog {
+    .edit {
+      height: 25px;
+      text-align: center;
+      margin-top: 15px;
+      border-bottom: 1px solid rgba(58, 77, 118, 0.4);
+    }
+  }
+}
+
+.taskManageCardtext {
+  float: left !important;
+
+  .personnel, .personne2 {
+    display: block;
+    width: 180px;
+    word-break: keep-all;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 10px;
+    margin-left: 20px;
+  }
+
+  .personne2 {
+    margin-top: 10px;
+  }
+}
+</style>
+
+
+
